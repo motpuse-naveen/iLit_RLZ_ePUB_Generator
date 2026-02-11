@@ -18,10 +18,10 @@ SOURCE_DIR = Path(__file__).parent
 
 # Default configuration for this script. These can be overridden dynamically
 # via CLI arguments or metadata in the input JSON.
-DEFAULT_INPUT_DIR_NAME = "b33dd8090ad64e9483f7ad08df480862"
-DEFAULT_BOOK_TITLE = "CRASHDIVE"
-DEFAULT_BOOK_ID = "0822452596"
-DEFAULT_BOOK_AUTHOR = "Lee Frederick"
+DEFAULT_INPUT_DIR_NAME = "default_input_dir"
+DEFAULT_BOOK_TITLE = "Book Title"
+DEFAULT_BOOK_ID = "Book_Id"
+DEFAULT_BOOK_AUTHOR = "Book Author"
 
 # Name of the main CSS file inside the EPUB package
 EPUB_CSS_NAME = "styles.css"
@@ -95,29 +95,100 @@ def parse_args():
     return parser.parse_args()
 
 
+def extract_text_from_html(html_content):
+    """
+    Extract text content from HTML, cleaning z tags and other formatting.
+    Removes z tags, converts <br> to spaces, and strips whitespace.
+    """
+    if not html_content:
+        return None
+    
+    # Remove z tags (opening and closing)
+    text = re.sub(r"<z\s+class=['\"]s['\"]>", '', html_content)
+    text = re.sub(r'<z\s+class=["\']w["\']>', '', text)
+    text = re.sub(r'</z>', '', text)
+    
+    # Convert <br> and <br /> to spaces
+    text = re.sub(r'<br\s*/?\s*>', ' ', text, flags=re.IGNORECASE)
+    
+    # Extract text content from HTML tags (remove all HTML tags)
+    text = re.sub(r'<[^>]+>', '', text)
+    
+    # Clean up whitespace: normalize multiple spaces to single space
+    text = re.sub(r'\s+', ' ', text)
+    
+    # Strip leading/trailing whitespace
+    text = text.strip()
+    
+    return text if text else None
+
+
 def extract_metadata_from_json(data, default_title, default_id, default_author):
     """
     Best-effort extraction of basic metadata from the JSON content.
-    Falls back to provided defaults when fields are missing.
+    Priority order:
+    1. Extract from Pages.tp HTML (title from <h1 class='title'>, author from <h1 class='author'>)
+    2. Use top-level BookTitle/Title and BookAuthor/Author fields
+    3. Fall back to provided defaults
     """
-    # These keys are guesses based on common naming conventions. If they
-    # do not exist in the JSON, the defaults will be used instead.
-    title = (
-        data.get("BookTitle")
-        or data.get("Title")
-        or default_title
-    )
+    title = None
+    author = None
+    
+    # First, try to extract from title page (Pages.tp)
+    pages = data.get("Pages", {})
+    tp_page = pages.get("tp")
+    if tp_page:
+        sentences = tp_page.get("sentences", [])
+        for sentence in sentences:
+            sentence_text = sentence.get("sentence_text", "")
+            if not sentence_text:
+                continue
+            
+            # Extract title from <h1 class='title'>
+            if 'class=\'title\'' in sentence_text or 'class="title"' in sentence_text:
+                if title is None:  # Only extract first match
+                    title = extract_text_from_html(sentence_text)
+            
+            # Extract author from <h1 class='author'>
+            if 'class=\'author\'' in sentence_text or 'class="author"' in sentence_text:
+                if author is None:  # Only extract first match
+                    author = extract_text_from_html(sentence_text)
+    
+    # Fall back to top-level fields if title page extraction didn't work
+    if not title:
+        title = (
+            data.get("BookTitle")
+            or data.get("Title")
+            or default_title
+        )
+    
+    if not author:
+        author = (
+            data.get("BookAuthor")
+            or data.get("Author")
+            or default_author
+        )
+    
+    # Book ID extraction with fallback to Styles array
     book_id = (
         data.get("BookId")
         or data.get("BookID")
         or data.get("ISBN")
-        or default_id
     )
-    author = (
-        data.get("BookAuthor")
-        or data.get("Author")
-        or default_author
-    )
+    
+    # If not found, extract from first CSS filename in Styles array
+    if not book_id:
+        styles = data.get("Styles", [])
+        if styles and isinstance(styles, list) and len(styles) > 0:
+            first_css = styles[0]
+            if isinstance(first_css, str):
+                # Remove extension (.css) to get Book ID
+                book_id = Path(first_css).stem
+    
+    # Final fallback to default
+    if not book_id:
+        book_id = default_id
+    
     return title, book_id, author
 
 
@@ -143,15 +214,19 @@ def init_config(input_dir_path: Path, book_title: str, book_id: str, book_author
     MEDIA_DIR = input_dir_path / "media"
     FONTS_SOURCE_DIR = input_dir_path / FONTS_DIR_NAME
 
+    # DEFAULT_CSS_FILE is no longer needed - we use Styles array directly
+    # Keeping it for backward compatibility but it won't be used if Styles exists
     DEFAULT_CSS_FILE = f"{BOOK_ID}.css"
 
     # Resolve and create output root
     output_root = output_root.resolve()
     output_root.mkdir(parents=True, exist_ok=True)
 
-    # EPUB directory for this book under the output root
-    EPUB_DIR = output_root / BOOK_TITLE
-    EPUB_NAME = f"{BOOK_TITLE}.epub"
+    # EPUB directory and filename: BookTitle_BookID (with spaces replaced by underscores)
+    sanitized_title = BOOK_TITLE.replace(" ", "_")
+    epub_base_name = f"{sanitized_title}_{BOOK_ID}"
+    EPUB_DIR = output_root / epub_base_name
+    EPUB_NAME = f"{epub_base_name}.epub"
 
     # Derived EPUB sub-directories
     OEBPS_DIR = EPUB_DIR / OEBPS_DIR_NAME
@@ -753,8 +828,12 @@ def create_content_opf(data, toc_entries, oebps_dir):
     # Add EPUB 3.0 navigation document (toc.xhtml) - matches POC_ePUB structure
     manifest_items.append(f'    <item id="toc" href="xhtml/toc.xhtml" media-type="application/xhtml+xml" properties="nav"/>')
     
-    # Add content.xhtml (visible table of contents page)
-    manifest_items.append(f'    <item id="content" href="xhtml/content.xhtml" media-type="application/xhtml+xml"/>')
+    # Check if content.xhtml will be added from TOC entries (to avoid duplicates)
+    has_content_in_toc = 'content' in toc_entries or 'toc' in toc_entries
+    
+    # Add content.xhtml (visible table of contents page) only if not already in TOC
+    if not has_content_in_toc:
+        manifest_items.append(f'    <item id="content" href="xhtml/content.xhtml" media-type="application/xhtml+xml"/>')
     
     # Add NCX file for backward compatibility (required when spine has toc="ncx")
     manifest_items.append(f'    <item id="ncx" href="toc.ncx" media-type="application/x-dtbncx+xml"/>')
@@ -820,6 +899,9 @@ def create_content_opf(data, toc_entries, oebps_dir):
         href = toc_entry.get('href', f'{page_id}.htm')
         # Use the href from TOC but ensure it's in OEBPS
         html_file = href.replace(BOOK_PREFIX, '').replace('.htm', '.xhtml')
+        # Default manifest ID is the page_id
+        manifest_id = page_id
+        
         # Map front matter file names to match POC_ePUB: cvi -> cover, tp -> titlepage, crt -> copyright
         if html_file == 'cvi.xhtml':
             html_file = 'cover.xhtml'
@@ -830,11 +912,14 @@ def create_content_opf(data, toc_entries, oebps_dir):
         elif page_id == 'content' or page_id == 'toc':
             # Handle content/toc TOC entry - map to content.xhtml
             html_file = 'content.xhtml'
+            # Use 'content' as the ID (not 'toc' which is reserved for navigation document)
+            manifest_id = 'content'
             if toc_entry.get('linear') == 'yes':
                 content_in_spine = True
-        manifest_items.append(f'    <item id="{page_id}" href="xhtml/{html_file}" media-type="application/xhtml+xml"/>')
+        
+        manifest_items.append(f'    <item id="{manifest_id}" href="xhtml/{html_file}" media-type="application/xhtml+xml"/>')
         if toc_entry.get('linear') == 'yes':
-            spine_items.append(f'    <itemref idref="{page_id}"/>')
+            spine_items.append(f'    <itemref idref="{manifest_id}"/>')
     
     # Ensure content.xhtml is in spine if not already added (matches POC_ePUB structure)
     if not content_in_spine and 'content' not in [item.split('"')[1] for item in spine_items if 'idref=' in item]:
@@ -934,6 +1019,9 @@ def create_toc_ncx(data, toc_entries, oebps_dir):
             html_file = 'titlepage.xhtml'
         elif html_file == 'crt.xhtml':
             html_file = 'copyright.xhtml'
+        elif page_id == 'content' or page_id == 'toc':
+            # Handle content/toc TOC entry - map to content.xhtml (not toc.xhtml)
+            html_file = 'content.xhtml'
         play_order = toc_entry.get('playOrder', nav_counter)
         
         nav_points.append(f'''        <navPoint id="navpoint-{nav_counter}" playOrder="{play_order}">
@@ -1244,8 +1332,13 @@ def copy_css_file(data, oebps_css_dir):
     print("Copying CSS files...")
 
     # 1️⃣ Copy main source CSS file into EPUB as styles.css
-    css_files = data.get('Styles', [DEFAULT_CSS_FILE])
-    main_css = css_files[0] if css_files else DEFAULT_CSS_FILE
+    # Use Styles array directly - it should always exist in the JSON
+    css_files = data.get('Styles', [])
+    if css_files and isinstance(css_files, list) and len(css_files) > 0:
+        main_css = css_files[0]
+    else:
+        # Fallback: construct from BOOK_ID if Styles array is missing
+        main_css = f"{BOOK_ID}.css"
 
     css_source = MEDIA_DIR / main_css
     css_target = oebps_css_dir / EPUB_CSS_NAME
