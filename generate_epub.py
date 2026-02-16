@@ -558,6 +558,15 @@ def convert_copyright_structure(html_content, page_id, page_number):
                 if tag.lower() in ['span', 'strong', 'em', 'a', 'br', 'sup', 'link', 'meta', 'script', 'style', 'title']:
                     return match.group(0)
                 
+                # Preserve section ID if it matches page_{page_number} pattern (for TOC navigation)
+                if tag.lower() == 'section':
+                    id_match = re.search(r'\bid\s*=\s*["\']([^"\']+)["\']', attrs, re.IGNORECASE)
+                    if id_match:
+                        existing_id = id_match.group(1)
+                        # If section ID is exactly page_{page_number}, preserve it
+                        if existing_id == f'page_{page_num}':
+                            return match.group(0)
+                
                 element_counter += 1
                 new_id = f'page_{page_num}_{element_counter}'
                 
