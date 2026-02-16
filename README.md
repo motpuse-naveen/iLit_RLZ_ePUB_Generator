@@ -1,10 +1,10 @@
 # EPUB Generator
 
-A Python script that generates EPUB 3.0 files from JavaScript content files and associated media assets.
+A Python script that generates EPUB 3.3 files from JavaScript content files and associated media assets.
 
 ## Overview
 
-This tool converts structured JavaScript content files (containing book data, pages, and metadata) into fully compliant EPUB 3.0 files. It automatically extracts metadata from the content, processes HTML pages, manages assets (images, fonts, CSS), and creates a properly structured EPUB package.
+This tool converts structured JavaScript content files (containing book data, pages, and metadata) into fully compliant EPUB 3.3 files. It automatically extracts metadata from the content, processes HTML pages, manages assets (images, fonts, CSS), and creates a properly structured EPUB package.
 
 ## Requirements
 
@@ -34,6 +34,20 @@ project_root/
 ```
 
 **Example:** Default input folder: `default_input_dir/`
+
+### IXE (Ingest XML Exchange)
+
+IXE is an XML format produced by converting the same JSON content (from the `.js` file) into schema-valid XML for downstream use (e.g. Aptara). See:
+
+- **Schema:** [`schema/ixe.xsd`](schema/ixe.xsd) — XSD definition (namespace `http://savvas.com/ixe/1.0`).
+- **Documentation:** [`docs/IXE.md`](docs/IXE.md) — element mapping rules (JSON → IXE) and metadata expectations.
+
+To **create IXE XML** from an input folder or `.js` file:
+
+```bash
+python3 json_to_ixe.py path/to/input_folder              # writes {folder_name}.ixe.xml
+python3 json_to_ixe.py path/to/file.js -o output.ixe.xml # custom output path
+```
 
 ## Quick Start
 
@@ -182,10 +196,10 @@ python3 generate_epub.py default_input_dir \
 ## Features
 
 - **Automatic Metadata Extraction**: Extracts title, author, and book ID from JSON content
-- **EPUB 3.0 Compliant**: Generates standards-compliant EPUB files
+- **EPUB 3.3 Compliant**: Generates standards-compliant EPUB files
 - **Asset Management**: Handles images, fonts, CSS, and audio files
 - **Accessibility**: Includes proper ARIA attributes and semantic markup
-- **Navigation**: Creates both EPUB 3.0 navigation document (`toc.xhtml`) and NCX file for backward compatibility
+- **Navigation**: Creates both EPUB 3.3 navigation document (`toc.xhtml`) and NCX file for backward compatibility
 - **Custom Styling**: Supports project-specific CSS overrides via `custom.css`
 
 ## Summary

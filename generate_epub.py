@@ -10,7 +10,7 @@ import zipfile
 from pathlib import Path
 import re
 from datetime import datetime
-#import argparse
+import argparse
 import ast
 
 # Configuration
@@ -825,7 +825,11 @@ def create_content_opf(data, toc_entries, oebps_dir):
     css_file = EPUB_CSS_NAME
     manifest_items.append(f'    <item id="css" href="css/{css_file}" media-type="text/css"/>')
     
-    # Add EPUB 3.0 navigation document (toc.xhtml) - matches POC_ePUB structure
+    # Add optional custom.css to manifest if it exists
+    if CUSTOM_CSS_FILE.exists():
+        manifest_items.append(f'    <item id="custom-css" href="css/{CUSTOM_CSS_NAME}" media-type="text/css"/>')
+    
+    # Add EPUB 3.3 navigation document (toc.xhtml) - matches POC_ePUB structure
     manifest_items.append(f'    <item id="toc" href="xhtml/toc.xhtml" media-type="application/xhtml+xml" properties="nav"/>')
     
     # Check if content.xhtml will be added from TOC entries (to avoid duplicates)
@@ -956,7 +960,7 @@ def create_content_opf(data, toc_entries, oebps_dir):
     publication_date = datetime.now().strftime("%Y-%m-%d")
     
     content_opf = f'''<?xml version="1.0" encoding="UTF-8"?>
-<package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="bookid" xmlns:dc="http://purl.org/dc/elements/1.1/" xml:lang="en">
+<package xmlns="http://www.idpf.org/2007/opf" version="3.3" unique-identifier="bookid" xmlns:dc="http://purl.org/dc/elements/1.1/" xml:lang="en">
     <metadata xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:opf="http://www.idpf.org/2007/opf">
         <dc:title>{BOOK_TITLE}</dc:title>
         <dc:identifier id="bookid">{BOOK_ID}</dc:identifier>
@@ -1056,7 +1060,7 @@ def create_toc_ncx(data, toc_entries, oebps_dir):
     return ncx_path
 
 def create_nav_xhtml(data, toc_entries, oebps_xhtml_dir, css_file):
-    """Create EPUB 3.0 toc.xhtml navigation document - matches POC_ePUB structure"""
+    """Create EPUB 3.3 toc.xhtml navigation document - matches POC_ePUB structure"""
     
     # Sort TOC entries by playOrder
     sorted_toc = sorted(toc_entries.items(), key=lambda x: int(x[1].get('playOrder', 999)))

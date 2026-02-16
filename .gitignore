@@ -3,3 +3,5 @@
 .DS_Store
 /Final_ePUB
 *.epub
+/IXE
+/__pycache__
