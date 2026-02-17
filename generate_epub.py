@@ -41,7 +41,7 @@ FONTS_SOURCE_DIR = None
 COVER_SOURCE_NAME = None
 
 # EPUB output locations (initialized in main())
-OUTPUT_ROOT_DIR_NAME = "Final_ePUB"
+OUTPUT_ROOT_DIR_NAME = "output_epubs"
 EPUB_DIR = None
 EPUB_NAME = None
 CUSTOM_CSS_FILE = SOURCE_DIR / CUSTOM_CSS_NAME
@@ -78,7 +78,7 @@ def parse_args():
     parser.add_argument(
         "--output-root",
         default=OUTPUT_ROOT_DIR_NAME,
-        help="Output root directory (default: Final_ePUB). Can be absolute or relative to the script.",
+        help="Output root directory (default: output_epubs). Can be absolute or relative to the script.",
     )
     parser.add_argument(
         "--title",
@@ -666,20 +666,29 @@ def generate_html_page(page_id, page_data, toc_entry, css_file, page_number=None
     """Generate HTML file for a page"""
     sentences = page_data.get('sentences', [])
     
-    # Determine epub:type and section class based on page_id
+    # Determine epub:type, ARIA role, and section class based on page_id
     epub_type = "bodymatter chapter"
+    aria_role = "doc-chapter"
     section_class = "page-container"
     if page_id == 'cvi' or page_id.startswith('cover'):
         epub_type = "frontmatter cover"
+        aria_role = None  # Omit role for cover
     elif page_id == 'tp' or page_id.startswith('titlepage'):
         epub_type = "frontmatter titlepage"
+        aria_role = None  # Omit role for titlepage
     elif page_id == 'crt' or page_id.startswith('copyright'):
         epub_type = "frontmatter copyright"
+        aria_role = None  # Omit role for copyright
     elif page_id == 'content':
-        epub_type = "frontmatter content"
+        epub_type = "frontmatter"
+        aria_role = None  # Omit role for content
     elif page_id.startswith('glossary'):
         epub_type = "glossary"
+        aria_role = "doc-glossary"
         section_class = "glossary"
+    
+    # Build role attribute string (omit for copyright and content pages)
+    role_attr = f' role="{aria_role}"' if aria_role else ''
     
     # Build HTML content (HTML5 standard) - matching POC_ePUB structure
     html_parts = [
@@ -698,7 +707,7 @@ def generate_html_page(page_id, page_data, toc_entry, css_file, page_number=None
         '',
         '<body>',
         '    <main role="main">',
-        f'        <section id="page_{page_number if page_number else page_id}" epub:type="{epub_type}" class="{section_class}">'
+        f'        <section id="page_{page_number if page_number else page_id}" epub:type="{epub_type}"{role_attr} class="{section_class}">'
     ]
     
     # Initialize element counter for unique IDs (starts at 0, pagebreak will be 1)
@@ -1068,8 +1077,12 @@ def create_toc_ncx(data, toc_entries, oebps_dir):
     
     return ncx_path
 
-def create_nav_xhtml(data, toc_entries, oebps_xhtml_dir, css_file):
-    """Create EPUB 3.3 toc.xhtml navigation document - matches POC_ePUB structure"""
+def create_nav_xhtml(data, toc_entries, oebps_xhtml_dir, css_file, page_breaks=None):
+    """Create EPUB 3.3 toc.xhtml navigation document - matches POC_ePUB structure
+    
+    Args:
+        page_breaks: List of tuples (page_number, html_filename) for page breaks, e.g. [(1, 'cover.xhtml'), (2, 'titlepage.xhtml')]
+    """
     
     # Sort TOC entries by playOrder
     sorted_toc = sorted(toc_entries.items(), key=lambda x: int(x[1].get('playOrder', 999)))
@@ -1096,11 +1109,32 @@ def create_nav_xhtml(data, toc_entries, oebps_xhtml_dir, css_file):
         nav_items.append(f'                    <li id="toc_list_{item_counter}"><a href="{html_file}#page_{page_num}">{title}</a></li>')
         item_counter += 1
     
+    # Build page list navigation (required for EPUB 3.x)
+    page_list_items = []
+    if page_breaks:
+        page_list_counter = 1
+        for page_num, html_file in sorted(page_breaks, key=lambda x: x[0]):
+            page_list_items.append(f'                    <li id="page-list_{page_list_counter}"><a href="{html_file}#pagebreak_{page_num}">{page_num}</a></li>')
+            page_list_counter += 1
+    
     # Build optional custom.css link for toc.xhtml
     custom_link = ""
     if CUSTOM_CSS_FILE.exists():
         custom_link = f'    <link rel="stylesheet" type="text/css" href="../css/{CUSTOM_CSS_NAME}"/>\n'
 
+    # Build page list section if page breaks are available
+    page_list_section = ""
+    if page_list_items:
+        page_list_section = f'''
+        <section id="page_list" class="page-container">
+            <nav id="page-list" epub:type="page-list" role="doc-pagelist" aria-labelledby="page-list_title">
+                <h1 id="page-list_title">Page List</h1>
+                <ol>
+{chr(10).join(page_list_items)}
+                </ol>
+            </nav>
+        </section>'''
+    
     toc_xhtml = f'''<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE html>
 <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" lang="en">
@@ -1113,14 +1147,14 @@ def create_nav_xhtml(data, toc_entries, oebps_xhtml_dir, css_file):
 {custom_link}</head>
 <body>
     <main role="main">
-        <section id="page_toc" epub:type="frontmatter toc" class="page-container">
+        <section id="page_toc" class="page-container">
             <nav id="toc" epub:type="toc" role="doc-toc" aria-labelledby="toc_title">
                 <h1 id="toc_title">Table of Contents</h1>
                 <ol id="toc_list">
 {chr(10).join(nav_items)}
                 </ol>
             </nav>
-        </section>
+        </section>{page_list_section}
     </main>
 </body>
 
@@ -1218,7 +1252,7 @@ def create_content_xhtml(data, toc_entries, oebps_xhtml_dir, css_file):
 {custom_link}</head>
 <body>
     <main role="main">
-        <section id="page_4" epub:type="frontmatter content" class="page-container">
+            <section id="page_4" epub:type="frontmatter" class="page-container">
             <span epub:type="pagebreak" role="doc-pagebreak" id="pagebreak_4"><span class="sr-only">Page 4</span></span>
             <nav id="page_4_1" aria-labelledby="page_4_2">
                 <h1 id="page_4_2" class='chapter'>CONTENTS</h1>
@@ -1458,7 +1492,7 @@ def main():
     if args.author:
         book_author = args.author
 
-    # Resolve output root (Final_ePUB by default)
+    # Resolve output root (output_epubs by default)
     output_root = Path(args.output_root)
     if not output_root.is_absolute():
         output_root = SOURCE_DIR / output_root
@@ -1481,6 +1515,7 @@ def main():
     # Sort TOC entries by playOrder to assign page numbers
     sorted_toc = sorted(toc_entries.items(), key=lambda x: int(x[1].get('playOrder', 999)))
     page_number = 1
+    page_breaks = []  # Track page breaks for page list navigation
     
     for page_id, toc_entry in sorted_toc:
         if page_id in pages:
@@ -1499,13 +1534,19 @@ def main():
                 html_filename = 'titlepage.xhtml'
             elif html_filename == 'crt.xhtml':
                 html_filename = 'copyright.xhtml'
+            elif page_id == 'content' or page_id == 'toc' or html_filename == 'content.xhtml' or html_filename == 'toc.xhtml':
+                # Map content/toc entries to content.xhtml (the visible TOC page)
+                html_filename = 'content.xhtml'
             html_path = oebps_xhtml_dir / html_filename
             
             with open(html_path, 'w', encoding='utf-8') as f:
                 f.write(html_content)
             
             print(f"  Generated {html_filename}")
+            
+            # Track page breaks for page list navigation
             if current_page_num is not None:
+                page_breaks.append((current_page_num, html_filename))
                 page_number += 1
     
     # Create EPUB metadata files
@@ -1514,7 +1555,7 @@ def main():
     create_container_xml(metainf_dir)
     create_content_opf(data, toc_entries, oebps_dir)
     create_toc_ncx(data, toc_entries, oebps_dir)
-    create_nav_xhtml(data, toc_entries, oebps_xhtml_dir, css_file)
+    create_nav_xhtml(data, toc_entries, oebps_xhtml_dir, css_file, page_breaks)
     create_content_xhtml(data, toc_entries, oebps_xhtml_dir, css_file)
     
     # Copy audio files if they exist (for glossary with audio support)

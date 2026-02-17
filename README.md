@@ -54,7 +54,7 @@ python3 json_to_ixe.py path/to/file.js -o output.ixe.xml # custom output path
 ### Basic Usage
 
 ```bash
-# Use default input folder and output to Final_ePUB/
+# Use default input folder and output to output_epubs/
 python3 generate_epub.py
 
 # Specify custom input folder
@@ -71,8 +71,8 @@ python3 generate_epub.py path/to/input_folder \
 ### Output
 
 The script generates:
-- **EPUB folder**: `{output_root}/{BookTitle}_{BookID}/` (e.g., `Final_ePUB/CRASH_DIVE_0822452596/`)
-- **EPUB file**: `{output_root}/{BookTitle}_{BookID}.epub` (e.g., `Final_ePUB/CRASH_DIVE_0822452596.epub`)
+- **EPUB folder**: `{output_root}/{BookTitle}_{BookID}/` (e.g., `output_epubs/CRASH_DIVE_0822452596/`)
+- **EPUB file**: `{output_root}/{BookTitle}_{BookID}.epub` (e.g., `output_epubs/CRASH_DIVE_0822452596.epub`)
 
 ## Command-Line Parameters
 
@@ -97,7 +97,7 @@ The script generates:
 #### `--output-root`
 
 - **Usage:** `--output-root <directory>`
-- **Default:** `"Final_ePUB"`
+- **Default:** `"output_epubs"`
 - **Description:** Output root directory (can be absolute or relative to script location)
 - **Example:**
   ```bash
@@ -187,7 +187,7 @@ python3 generate_epub.py --output-root /path/to/output
 
 ```bash
 python3 generate_epub.py default_input_dir \
-    --output-root Final_ePUB \
+    --output-root output_epubs \
     --title "CRASH DIVE" \
     --book-id "0822452596" \
     --author "Lee Frederick"
